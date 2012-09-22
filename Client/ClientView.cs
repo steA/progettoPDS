@@ -25,13 +25,13 @@ namespace Client
         private delegate void updatePictureBoxDelegate(ImageMessage msg);
         private delegate void toolStripMenuDelegate(string text);
         
-        private int port;
-        private string user, passw;
+        private int port=2626;
+        private string user="", passw="password";
         private bool isConnected = false, first = true;
         private Stream streamSender;
         private Stream streamReceiver;
         private TcpClient clientSocket, clipSocket, videoSocket;
-        private IPAddress ipAddr;
+        private IPAddress ipAddr=IPAddress.Parse("127.1");
         private Form settings;
         private BlockingCollection<TextMessage> msgToSend;
         private Thread senderThread, receiverThread, clipboardThread, videoThread;
@@ -48,22 +48,19 @@ namespace Client
         {
             if (isConnected == true)
             {
+                TextMessage t = new TextMessage();
+                t.username = user;
+                t.message = " si e' disconnesso";
+                t.messageType = MessageType.DISCONNECT;
+                msgToSend.Add(t);
                 closeConnection();
             }
         }
 
         private void settingsToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (first)
-            {
-                settings = new Settings(this);
-                settings.ShowDialog();
-            }
-            else
-            {
                 settings = new Settings(this, user, ipAddr.ToString(), passw, port.ToString());
                 settings.ShowDialog();
-            }
         }
 
         private void connectToolStripMenuItem_Click(object sender, EventArgs e)
@@ -72,7 +69,7 @@ namespace Client
             {
                 if (first == true)
                 {
-                    settings = new Settings(this);
+                    settings = new Settings(this, user, ipAddr.ToString(), passw, port.ToString());
                     settings.ShowDialog();
                     //utente preme annulla
                     if (first == true)
@@ -91,10 +88,7 @@ namespace Client
                 t.username = user;
                 t.message = "si e' disconnesso";
                 t.messageType = MessageType.DISCONNECT;
-                t.sendMe(streamSender);
-                t.username = "";
-                t.message = "disconnesso";
-                updateLog(t);
+                msgToSend.Add(t);
                 closeConnection();
                 messageText.Enabled = false;
                 isConnected = false;
@@ -112,10 +106,7 @@ namespace Client
                 t.username = user;
                 t.message = " si e' disconnesso";
                 t.messageType = MessageType.DISCONNECT;
-                t.sendMe(streamSender);
-                t.username = "";
-                t.message = "disconnesso";
-                updateLog(t);
+                msgToSend.Add(t);
                 closeConnection();
             }
             this.Close();
@@ -131,20 +122,23 @@ namespace Client
                 t.messageType = MessageType.TEXT;
                 msgToSend.Add(t);
             }
+            messageText.Clear();
         }
 
         private void messageText_KeyPress(object sender, KeyPressEventArgs e)
         {
             if (e.KeyChar == (char)13)
             {
-                if (messageText.Text != "" && messageText.Text != null)
+                String s = System.Text.RegularExpressions.Regex.Replace(messageText.Text, @"^\s*$\n", string.Empty, System.Text.RegularExpressions.RegexOptions.Multiline);
+                if (s != "" && s != null)
                 {
                     TextMessage t = new TextMessage();
-                    t.message = System.Text.RegularExpressions.Regex.Replace(messageText.Text, @"^\s*$\n", string.Empty, System.Text.RegularExpressions.RegexOptions.Multiline);
+                    t.message = s;
                     t.username = user;
                     t.messageType = MessageType.TEXT;
                     msgToSend.Add(t);
                 }
+                messageText.Clear();
             }
         }
 
@@ -283,13 +277,13 @@ namespace Client
 
         private void closeConnection()
         {
-            threadKill();
             if(clientSocket!=null)
                 clientSocket.Close();
             if(clipSocket!=null)
                 clipSocket.Close();
             if(videoSocket!=null)
                 videoSocket.Close();
+            threadKill();
         }
 
         private void threadKill()
@@ -297,18 +291,22 @@ namespace Client
             if (senderThread != null)
             {
                 senderThread.Abort();
+                senderThread.Join();
             }
             if (receiverThread != null)
             {
                 receiverThread.Abort();
+                receiverThread.Join();
             }
             if (clipboardThread != null)
             {
                 clipboardThread.Abort();
+                clipboardThread.Join();
             }
             if (videoThread != null)
             {
                 videoThread.Abort();
+                videoThread.Join();
             }
         }
 
@@ -316,7 +314,7 @@ namespace Client
         {
             try
             {
-                while(true)
+                while (true)
                 {
                     TextMessage msg = msgToSend.Take();
                     msg.sendMe(streamSender);
@@ -324,10 +322,12 @@ namespace Client
                     updateLog(msg);
                 }
             }
-            catch
+            catch (ThreadAbortException)
             {
                 return;
             }
+            catch (Exception)
+            {}
         }
 
         private void receiveMsg()
@@ -341,10 +341,12 @@ namespace Client
                     updateLog(msg);
                 }
             }
-            catch
+            catch(ThreadAbortException)
             {
                 return; 
             }
+            catch(Exception)
+            {}
         }
 
         /*private void receiveVideo()
@@ -394,7 +396,7 @@ namespace Client
             {
                 if (m.messageType == MessageType.TEXT)
                 {
-                    messageLog.Font = new Font(messageLog.SelectionFont, FontStyle.Regular);
+                    messageLog.SelectionFont = new Font(messageLog.Font, FontStyle.Regular);
                     messageLog.SelectionColor = Color.Blue;
                     messageLog.AppendText(m.username + " says: ");
                     messageLog.SelectionColor = Color.Black;
@@ -402,7 +404,7 @@ namespace Client
                 }
                 else
                 {
-                    messageLog.Font = new Font(messageLog.SelectionFont, FontStyle.Italic);
+                    messageLog.SelectionFont = new Font(messageLog.Font, FontStyle.Italic);
                     messageLog.SelectionColor = Color.Red;
                     messageLog.AppendText(m.username + " " + m.message+"\n");
                 }

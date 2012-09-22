@@ -23,13 +23,10 @@ namespace Server
         private volatile ArrayList clients = ArrayList.Synchronized(
             new ArrayList());
         private BlockingCollection<TextMessage> msgQueue = new BlockingCollection<TextMessage>();
-        private int port;
-        private string user, passw;
+        private int port = 2626;
+        private string user = "Server", passw = "password";
         private bool _connect = false, first = true;
-        private Stream streamSender;
-        private Stream streamReceiver;
-        private TcpClient clientSocket, clipSocket, videoSocket;
-        private IPAddress ipAddr;
+        private IPAddress ipAddr = IPAddress.Parse("127.1");
         private Form settings;
         private Thread _accepterConn;
         private Thread _videoDispatcher;
@@ -49,6 +46,11 @@ namespace Server
         {
             if (_connect == true)
             {
+                TextMessage t = new TextMessage();
+                t.username = user;
+                t.message = "si e' disconnesso";
+                t.messageType = MessageType.DISCONNECT;
+                msgQueue.Add(t);
                 Disconnect();
             }
         }
@@ -59,7 +61,7 @@ namespace Server
             {
                 if (first == true)
                 {
-                    settings = new Settings(this);
+                    settings = new Settings(this, user, ipAddr.ToString(), passw, port.ToString());
                     settings.ShowDialog();
                     //utente preme annulla
                     if (first == true)
@@ -79,10 +81,7 @@ namespace Server
                 t.username = user;
                 t.message = "si e' disconnesso";
                 t.messageType = MessageType.DISCONNECT;
-                t.sendMe(streamSender);
-                t.username = "";
-                t.message = "disconnesso";
-                updateLog(t);
+                msgQueue.Add(t);
                 Disconnect();
                 txtMessage.Enabled = false;
                 _connect = false;
@@ -94,7 +93,16 @@ namespace Server
 
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
-
+            if (_connect == true)
+            {
+                TextMessage t = new TextMessage();
+                t.username = user;
+                t.message = "si e' disconnesso";
+                t.messageType = MessageType.DISCONNECT;
+                msgQueue.Add(t);
+                Disconnect();
+            }
+            this.Close();
         }
 
         private void toolStripMenuItem2_Click(object sender, EventArgs e)
@@ -106,16 +114,8 @@ namespace Server
 
         private void opzioniConnessioneToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (first)
-            {
-                settings = new Settings(this);
-                settings.ShowDialog();
-            }
-            else
-            {
                 settings = new Settings(this, user, ipAddr.ToString(), passw, port.ToString());
                 settings.ShowDialog();
-            }
         }
 
         private void impostazioniToolStripMenuItem_Click(object sender, EventArgs e)
@@ -154,12 +154,12 @@ namespace Server
 
         private void _dispatchChat()
         {
-            while (_connect)
+            try
             {
-                try
+                while (_connect)
                 {
                     TextMessage msg = msgQueue.Take();
-                    if (msg.messageType.Equals(MessageType.USER_LEAVE))
+                    if (msg.messageType.Equals(MessageType.DISCONNECT))
                     {
                         foreach (ClientConnection cli in (ArrayList)clients.Clone())
                             if (cli.Username.Equals(msg.username))
@@ -167,12 +167,26 @@ namespace Server
                                 clients.Remove(cli);
                             }
                     }
-                    foreach (ClientConnection cli in (ArrayList)clients.Clone())
+                    IEnumerator en = clients.GetEnumerator();
+                    while (en.MoveNext())
                     {
-
                         try
                         {
-                            cli.sendChat(msg);
+                            if (!((ClientConnection)en.Current).Username.Equals(msg.username) || !((ClientConnection)en.Current).GetType().Equals(MessageType.TEXT))
+                                ((ClientConnection)en.Current).sendChat(msg);
+                        }
+                        catch (ThreadAbortException)
+                        {
+                            while (en.MoveNext())
+                            {
+                                try
+                                {
+                                    if (!((ClientConnection)en.Current).Username.Equals(msg.username) || !((ClientConnection)en.Current).GetType().Equals(MessageType.TEXT))
+                                        ((ClientConnection)en.Current).sendChat(msg);
+                                }
+                                catch (Exception) { }
+                            }
+                            return;
                         }
                         catch (Exception)
                         {
@@ -181,20 +195,24 @@ namespace Server
                             {
                                 TextMessage l = new TextMessage();
                                 l.messageType = MessageType.USER_LEAVE;
-                                l.username = cli.Username;
+                                l.username = ((ClientConnection)en.Current).Username;
                                 DispatchMsg(l);
-                                clients.Remove(cli);
-                                cli.Disconnect();
+                                clients.Remove(((ClientConnection)en.Current));
+                                ((ClientConnection)en.Current).Disconnect();
                             }
                             catch (Exception) { }
                         }
                     }
                     updateLog(msg);
                 }
-                catch (ObjectDisposedException)
-                {
-                    return; //the queue has been closed
-                }
+            }
+            catch (ThreadAbortException)
+            {
+                return;
+            }
+            catch (ObjectDisposedException)
+            {
+                return; //the queue has been closed
             }
         }
 
@@ -206,17 +224,20 @@ namespace Server
                 listen.Start();
                 while (_connect)
                 {
-                    TcpClient ncli = listen.AcceptTcpClient();
-                    ArrayList name = new ArrayList();
-                    foreach (ClientConnection cli in clients)
-                        name.Add(cli.Username);
-                    ClientConnection c = new ClientConnection(this, ncli, passw, name);
-                    clients.Add(c);
-                    TextMessage ms = new TextMessage();
-                    ms.messageType = MessageType.USER_JOIN;
-                    ms.username = c.Username;
-                    ms.message = "nuovo utente connesso";
-                    DispatchMsg(ms);
+                    if (listen != null)
+                    {
+                        TcpClient ncli = listen.AcceptTcpClient();
+                        ArrayList name = new ArrayList();
+                        foreach (ClientConnection cli in clients)
+                            name.Add(cli.Username);
+                        ClientConnection c = new ClientConnection(this, ncli, passw, name);
+                        clients.Add(c);
+                        TextMessage ms = new TextMessage();
+                        ms.messageType = MessageType.USER_JOIN;
+                        ms.username = c.Username;
+                        ms.message = "nuovo utente connesso";
+                        DispatchMsg(ms);
+                    }
                 }
             }
             catch (ClientConnectionFail ae)
@@ -226,18 +247,7 @@ namespace Server
                 ms.message = ae.Message;
                 DispatchMsg(ms);
             }
-            catch (IOException e)
-            {
-                _disconnectReason = e;
-                return;
-            }
-            catch (Exception es)
-            {
-                if (_connect)
-                    throw es;
-                return;
-            }
-            finally
+            catch (IOException)
             {
                 if (listen != null)
                 {
@@ -245,9 +255,19 @@ namespace Server
                     listen = null;
 
                 }
-                if (_connect)
-                    Disconnect();
-            }   
+                return;
+            }
+            catch (Exception)
+            {
+
+                if (listen != null)
+                {
+                    listen.Stop();
+                    listen = null;
+
+                }
+                return;
+            }  
         }
 
         public void Disconnect()
@@ -260,13 +280,12 @@ namespace Server
                     connectionStateEvent(false);
                 //shutdown all threads
                 _connect = false;
-                killThread(_accepterConn);
-                killThread(_chatDispatcher);
-                killThread(_clipboardDispatcher);
-                killThread(_chatDispatcher);
-                killThread(_videoDispatcher);
                 if (listen != null)
                     listen.Stop();
+                killThread(_accepterConn);
+                /*killThread(_clipboardDispatcher);*/
+                killThread(_chatDispatcher);
+                /*killThread(_videoDispatcher);*/
                 //reset state
                 foreach (ClientConnection client in (ArrayList)clients.Clone())
                 {
@@ -281,6 +300,7 @@ namespace Server
             try
             {
                 t.Abort();
+                t.Join();
             }
             catch (Exception) { }
         }
@@ -295,7 +315,7 @@ namespace Server
             {
                 if (m.messageType == MessageType.TEXT)
                 {
-                    txtLog.Font = new Font(txtLog.SelectionFont, FontStyle.Regular);
+                    txtLog.SelectionFont = new Font(txtLog.Font, FontStyle.Regular);
                     txtLog.SelectionColor = Color.Blue;
                     txtLog.AppendText(m.username + " says: ");
                     txtLog.SelectionColor = Color.Black;
@@ -303,7 +323,7 @@ namespace Server
                 }
                 else
                 {
-                    txtLog.Font = new Font(txtLog.SelectionFont, FontStyle.Italic);
+                    txtLog.SelectionFont = new Font(txtLog.Font, FontStyle.Italic);
                     txtLog.SelectionColor = Color.Red;
                     txtLog.AppendText(m.username + " " + m.message+"\n");
                 }
@@ -355,22 +375,24 @@ namespace Server
                 t.messageType = MessageType.TEXT;
                 msgQueue.Add(t);
             }
+            txtMessage.Clear();
         }
 
         private void txtMessage_KeyPress(object sender, KeyPressEventArgs e)
         {
             if (e.KeyChar == (char)13)
             {
-                if (txtMessage.Text != "" && txtMessage.Text != null)
+                String s = System.Text.RegularExpressions.Regex.Replace(txtMessage.Text, @"^\s*$\n", string.Empty, System.Text.RegularExpressions.RegexOptions.Multiline);
+                if (s != "" && s != null)
                 {
                     TextMessage t = new TextMessage();
-                    t.message = System.Text.RegularExpressions.Regex.Replace(txtMessage.Text, @"^\s*$\n", string.Empty, System.Text.RegularExpressions.RegexOptions.Multiline);
+                    t.message = s;
                     t.username = user;
                     t.messageType = MessageType.TEXT;
                     msgQueue.Add(t);
                 }
+                txtMessage.Clear();
             }
-
         }
     }
 }

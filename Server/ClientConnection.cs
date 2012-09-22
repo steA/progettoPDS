@@ -98,11 +98,12 @@ namespace Server
                 }
                 catch (Exception) { }
                 _textReceiver.Abort();
+                _textReceiver.Join();
                 _clipReceiver.Abort();
+                _clipReceiver.Join();
             }
             finally
             {
-
                 _videoTcp.Close();
                 _clipTcp.Close();
                 _textTcp.Close();
@@ -177,7 +178,6 @@ namespace Server
 
         private void _receiveText()
         {
-
             try
             {
                 while (_connect)
@@ -189,6 +189,10 @@ namespace Server
             catch (IOException e)
             {
                 _disconnectReason = e;
+                return;
+            }
+            catch (ThreadAbortException)
+            {
                 return;
             }
             finally
