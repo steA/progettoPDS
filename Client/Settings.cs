@@ -59,6 +59,10 @@ namespace Client
             {
                 MessageBox.Show("Insert a username!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
+            }else if(user.Equals("Server"))
+            {
+                MessageBox.Show("Username riservato!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
             }
             return true;
         }

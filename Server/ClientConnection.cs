@@ -93,14 +93,12 @@ namespace Server
                 _connect = false;
                 try
                 {
-                    new TextMessage(MessageType.DISCONNECT, "Disconnect",
-                        "Il server ha interrotto la comunicazione").sendMe(_textTcp.GetStream());
+                    new TextMessage(MessageType.DISCONNECT, "Server",
+                        " comunicazione interrotta").sendMe(_textTcp.GetStream());
                 }
                 catch (Exception) { }
                 _textReceiver.Abort();
-                _textReceiver.Join();
                 _clipReceiver.Abort();
-                _clipReceiver.Join();
             }
             finally
             {
@@ -155,7 +153,7 @@ namespace Server
         }
         internal void sendChat(TextMessage msg)
         {
-            msg.sendMe(_textTcp.GetStream());
+                msg.sendMe(_textTcp.GetStream());
         }
         internal void sendClipboard(ClipboardMessage msg)
         {

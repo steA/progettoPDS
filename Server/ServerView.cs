@@ -47,11 +47,6 @@ namespace Server
         {
             if (_connect == true)
             {
-                TextMessage t = new TextMessage();
-                t.username = user;
-                t.message = "si e' disconnesso";
-                t.messageType = MessageType.DISCONNECT;
-                msgQueue.Add(t);
                 Disconnect();
             }
         }
@@ -79,12 +74,12 @@ namespace Server
             }
             else
             {
+                Disconnect();
                 TextMessage t = new TextMessage();
                 t.username = user;
                 t.message = "si e' disconnesso";
                 t.messageType = MessageType.DISCONNECT;
-                msgQueue.Add(t);
-                Disconnect();
+                updateLog(t);
                 txtMessage.Enabled = false;
                 _connect = false;
                 btnSend.Enabled = false;
@@ -98,12 +93,12 @@ namespace Server
         {
             if (_connect == true)
             {
+                Disconnect();
                 TextMessage t = new TextMessage();
                 t.username = user;
                 t.message = "si e' disconnesso";
                 t.messageType = MessageType.DISCONNECT;
-                msgQueue.Add(t);
-                Disconnect();
+                updateLog(t);
             }
             this.Close();
         }
@@ -150,8 +145,6 @@ namespace Server
                 /*_videoDispatcher = new Thread(_dispatchVideo);
                 _videoDispatcher.IsBackground = true;
                 _videoDispatcher.Start();*/
-                /*if (connectionStateEvent != null)
-                    connectionStateEvent(true);*/
             }
         }
 
@@ -175,25 +168,10 @@ namespace Server
                     {
                         try
                         {
-                            if (!((ClientConnection)en.Current).Username.Equals(msg.username) || !((ClientConnection)en.Current).GetType().Equals(MessageType.TEXT))
                                 ((ClientConnection)en.Current).sendChat(msg);
-                        }
-                        catch (ThreadAbortException)
-                        {
-                            while (en.MoveNext())
-                            {
-                                try
-                                {
-                                    if (!((ClientConnection)en.Current).Username.Equals(msg.username) || !((ClientConnection)en.Current).GetType().Equals(MessageType.TEXT))
-                                        ((ClientConnection)en.Current).sendChat(msg);
-                                }
-                                catch (Exception) { }
-                            }
-                            return;
                         }
                         catch (Exception)
                         {
-
                             try
                             {
                                 TextMessage l = new TextMessage();
@@ -209,10 +187,6 @@ namespace Server
                     updateLog(msg);
                 }
             }
-            catch (ThreadAbortException)
-            {
-                return;
-            }
             catch (ObjectDisposedException)
             {
                 return; //the queue has been closed
@@ -227,8 +201,6 @@ namespace Server
                 {
                     ClipboardMessage msg = clipQueue.Take();
                     IEnumerator en = clients.GetEnumerator();
-                    try
-                    {
                         while (en.MoveNext())
                         {
                                 ((ClientConnection)en.Current).sendClipboard(msg);
@@ -245,15 +217,6 @@ namespace Server
                             else if (msg.clipboardType == ClipBoardType.FILE)
                                 updateLog(new TextMessage(MessageType.ADMIN, msg.username, "ha condiviso la clipboard con un file che e' stato salvato in ./File ricevuti server/"+msg.filename));
                         }
-                    }
-                    catch (ThreadAbortException)
-                    {
-                        while (en.MoveNext())
-                        {
-                                ((ClientConnection)en.Current).sendClipboard(msg);
-                        }
-                        return;
-                    }
                 }
                 catch (ObjectDisposedException)
                 {
@@ -364,8 +327,6 @@ namespace Server
                 throw new ArgumentException("The pool is not connected");
             lock (this)
             {
-                /*if (connectionStateEvent != null)
-                    connectionStateEvent(false);*/
                 //shutdown all threads
                 _connect = false;
                 if (listen != null)
@@ -388,7 +349,6 @@ namespace Server
             try
             {
                 t.Abort();
-                t.Join();
             }
             catch (Exception) { }
         }

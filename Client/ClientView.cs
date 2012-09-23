@@ -23,6 +23,7 @@ namespace Client
     {
         private delegate void updateLogDelegate(TextMessage m);
         private delegate void receivedClipboardDelegate(ClipboardMessage msg);
+        private delegate void closeConnectionDelegate();
         
         private int port=2626;
         private string user="", passw="password";
@@ -46,11 +47,6 @@ namespace Client
         {
             if (isConnected == true)
             {
-                TextMessage t = new TextMessage();
-                t.username = user;
-                t.message = " si e' disconnesso";
-                t.messageType = MessageType.DISCONNECT;
-                msgToSend.Add(t);
                 closeConnection();
             }
         }
@@ -73,25 +69,20 @@ namespace Client
                     if (first == true)
                         return;
                 }
-
-                InitializeConnection();
                 isConnected = true;
+                InitializeConnection();
                 messageText.Enabled = true;
                 sendButton.Enabled = true;
                 connectToolStripMenuItem.Text = "Disconnetti";
             }
             else
             {
+                closeConnection();
                 TextMessage t = new TextMessage();
                 t.username = user;
                 t.message = "si e' disconnesso";
                 t.messageType = MessageType.DISCONNECT;
-                msgToSend.Add(t);
-                closeConnection();
-                messageText.Enabled = false;
-                isConnected = false;
-                sendButton.Enabled = false;
-                connectToolStripMenuItem.Text = "Connetti";
+                updateLog(t);
             }
 
         }
@@ -100,12 +91,12 @@ namespace Client
         {
             if (isConnected == true)
             {
+                closeConnection();
                 TextMessage t = new TextMessage();
                 t.username = user;
-                t.message = " si e' disconnesso";
+                t.message = "si e' disconnesso";
                 t.messageType = MessageType.DISCONNECT;
-                msgToSend.Add(t);
-                closeConnection();
+                updateLog(t);
             }
             this.Close();
         }
@@ -142,7 +133,7 @@ namespace Client
 
         private void shareClipboardToolStripMenuItem_Click(object sender, EventArgs e)
         {
-               string strclip;
+            string strclip;
             IDataObject d = Clipboard.GetDataObject();
             if (d.GetDataPresent(DataFormats.Text))  //invio testo
             {
@@ -270,13 +261,27 @@ namespace Client
 
         private void closeConnection()
         {
-            if(clientSocket!=null)
-                clientSocket.Close();
-            if(clipSocket!=null)
-                clipSocket.Close();
-            if(videoSocket!=null)
-                videoSocket.Close();
-            threadKill();
+            try
+            {
+                threadKill();
+                TextMessage t = new TextMessage();
+                t.username = user;
+                t.message = "si e' disconnesso";
+                t.messageType = MessageType.DISCONNECT;
+                t.sendMe(clientSocket.GetStream());
+                if (clientSocket != null)
+                    clientSocket.Close();
+                if (clipSocket != null)
+                    clipSocket.Close();
+                if (videoSocket != null)
+                    videoSocket.Close();
+                isConnected = false;
+                messageText.Enabled = false;
+                sendButton.Enabled = false;
+                connectToolStripMenuItem.Text = "Connetti";
+            }
+            catch(Exception)
+            { }
         }
 
         private void threadKill()
@@ -284,28 +289,23 @@ namespace Client
             if (senderThread != null)
             {
                 senderThread.Abort();
-                senderThread.Join();
             }
             if (receiverThread != null)
             {
                 receiverThread.Abort();
-                receiverThread.Join();
             }
             if (listenClipboardThread != null)
             {
                 listenClipboardThread.Abort();
-                listenClipboardThread.Join();
             }
             if (deliverClipboardThread != null)
             {
                 deliverClipboardThread.Abort();
-                deliverClipboardThread.Join();
             }
-            if (videoThread != null)
+            /*if (videoThread != null)
             {
-                videoThread.Abort();
                 videoThread.Join();
-            }
+            }*/
         }
 
         private void deliverMsg()
@@ -316,16 +316,12 @@ namespace Client
                 {
                     TextMessage msg = msgToSend.Take();
                     msg.sendMe(clientSocket.GetStream());
-                    /*thread safe ???*/
-                    updateLog(msg);
                 }
             }
-            catch (ThreadAbortException)
+            catch (Exception)
             {
                 return;
             }
-            catch (Exception)
-            {}
         }
 
         private void receiveMsg()
@@ -335,16 +331,18 @@ namespace Client
                 while (true)
                 {
                     TextMessage msg = TextMessage.recvMe(clientSocket.GetStream());
-                    /* thread safe ???? */
                     updateLog(msg);
+                    if (msg.username.Equals("Server") && msg.messageType == MessageType.DISCONNECT)
+                    {
+                        this.Invoke(new closeConnectionDelegate(this.closeConnection));
+                        return;
+                    }
                 }
             }
-            catch(ThreadAbortException)
-            {
-                return; 
-            }
             catch(Exception)
-            {}
+            {
+                return;
+            }
         }
 
         private void _dispatchClipboard()
@@ -355,16 +353,13 @@ namespace Client
                 {
                     ClipboardMessage msg = clipQueue.Take();
                     msg.sendMe(clipSocket.GetStream());
-                    /*thread safe ???*/
                     updateLog(new TextMessage(MessageType.ADMIN, "", "Hai condiviso il contenuto della clipboard"));
                 }
             }
-            catch (ThreadAbortException)
+            catch (Exception)
             {
                 return;
             }
-            catch (Exception)
-            {}
         }
 
         private void _listenClipboard()
@@ -380,7 +375,7 @@ namespace Client
                     else if(msg.clipboardType == ClipBoardType.BITMAP)
                         updateLog(new TextMessage(MessageType.ADMIN, msg.username, "ha condiviso la clipboard con un'immagine"));
                     else if(msg.clipboardType == ClipBoardType.FILE)
-                        updateLog(new TextMessage(MessageType.ADMIN, msg.username, "ha condiviso la clipboard con un file che è stato salvato in ./File ricevuti client/"+msg.filename));
+                        updateLog(new TextMessage(MessageType.ADMIN, msg.username, "ha condiviso la clipboard con un file che e' stato salvato in ./File ricevuti client/"+msg.filename));
                 }
             }
             catch
