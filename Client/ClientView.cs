@@ -22,19 +22,17 @@ namespace Client
     public partial class ClientView : Form
     {
         private delegate void updateLogDelegate(TextMessage m);
-        private delegate void updatePictureBoxDelegate(ImageMessage msg);
-        private delegate void toolStripMenuDelegate(string text);
+        private delegate void receivedClipboardDelegate(ClipboardMessage msg);
         
         private int port=2626;
         private string user="", passw="password";
         private bool isConnected = false, first = true;
-        private Stream streamSender;
-        private Stream streamReceiver;
         private TcpClient clientSocket, clipSocket, videoSocket;
         private IPAddress ipAddr=IPAddress.Parse("127.1");
         private Form settings;
-        private BlockingCollection<TextMessage> msgToSend;
-        private Thread senderThread, receiverThread, clipboardThread, videoThread;
+        private BlockingCollection<TextMessage> msgToSend = new BlockingCollection<TextMessage>();
+        private BlockingCollection<ClipboardMessage> clipQueue = new BlockingCollection<ClipboardMessage>();
+        private Thread senderThread, receiverThread, listenClipboardThread, deliverClipboardThread, videoThread;
 
         public ClientView()
         {
@@ -142,52 +140,44 @@ namespace Client
             }
         }
 
-        /*private void shareClipboardToolStripMenuItem_Click(object sender, EventArgs e)
+        private void shareClipboardToolStripMenuItem_Click(object sender, EventArgs e)
         {
-                IDataObject d = Clipboard.GetDataObject();
-                NetworkStream streamClip = clipSocket.GetStream();
+               string strclip;
+            IDataObject d = Clipboard.GetDataObject();
+            if (d.GetDataPresent(DataFormats.Text))  //invio testo
+            {
+                strclip = (string)d.GetData(DataFormats.Text);
                 ClipboardMessage cm = new ClipboardMessage(user);
+                cm.text = strclip;
+                cm.clipboardType = ClipBoardType.TEXT;
+                DispatchClipboard(cm);
+            }
+            else if (d.GetDataPresent(DataFormats.FileDrop, true))  //invio file
+            {
+                object fromClipboard = d.GetData(DataFormats.FileDrop);
+                foreach (string sourceFileName in (Array)fromClipboard)
+                {
+                    ClipboardMessage cm = new ClipboardMessage(user);
+                    cm.clipboardType = ClipBoardType.FILE;
+                    cm.filename = Path.GetFileName(sourceFileName);
+                    cm.filedata = File.ReadAllBytes(sourceFileName);
+                    DispatchClipboard(cm);
+                }
+            }
+            else if (Clipboard.ContainsImage()) //invio immagine
+            {
+                Bitmap img = (Bitmap)Clipboard.GetImage();
+                ClipboardMessage cm = new ClipboardMessage(user);
+                cm.bitmap = img;
+                cm.clipboardType = ClipBoardType.BITMAP;
+                DispatchClipboard(cm);
+            }
+        }
 
-                if (d.GetDataPresent(DataFormats.Text))  //invio testo
-                {
-                    try
-                    {
-                        shareClipboardToolStripMenuItem.Enabled = false;
-                        cm.clipboardType = ClipBoardType.TEXT;
-                        String clipText = (string)d.GetData(DataFormats.Text);
-                        cm.text = clipText;
-                        cm.sendMe(streamClip);
-                        shareClipboardToolStripMenuItem.Enabled = true;
-                    }
-                    catch
-                    {
-                        shareClipboardToolStripMenuItem.Enabled = true;
-                        return;
-                    }
-                }
-                else if (d.GetDataPresent(DataFormats.FileDrop, true))  //invio file
-                {
-                    ParameterizedThreadStart thrSendFile = new ParameterizedThreadStart(sendClipFile);
-                    Thread thr = new Thread(thrSendFile);
-                    thr.Start(d);
-                }
-
-                else if (Clipboard.ContainsImage())
-                {
-                    shareClipboardToolStripMenuItem.Enabled = false;
-                    Bitmap img = (Bitmap)Clipboard.GetImage();
-                    cm.username = user;
-                    cm.clipboardType = ClipBoardType.BITMAP;
-                    cm.bitmap = img;
-                    shareClipboardToolStripMenuItem.Enabled = true;
-                }
-                else
-                {
-                    System.Windows.Forms.MessageBox.Show("Invio fallito: la clipboard è vuota", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    shareClipboardToolStripMenuItem.Enabled = false;
-                }
-            }*/
-
+        public void DispatchClipboard(ClipboardMessage msg)
+        {
+            clipQueue.Add(msg);
+        }
         /*private void sendClipFile(object data)
         {
             int i = 0, qta = 0;
@@ -238,15 +228,13 @@ namespace Client
             {
                 clientSocket = new TcpClient();
                 clientSocket.Connect(new IPEndPoint(ipAddr, port));
-                streamSender = clientSocket.GetStream();
-                streamReceiver = clientSocket.GetStream();
-                ChallengeMessage sale = ChallengeMessage.recvMe(streamReceiver);
+                ChallengeMessage sale = ChallengeMessage.recvMe(clientSocket.GetStream());
                 ResponseChallengeMessage resp = new ResponseChallengeMessage();
                 resp.username = user;
                 MD5 md5 = new MD5CryptoServiceProvider();
                 resp.pswMd5 = Pds2Util.createPswMD5(passw, sale.salt);
-                resp.sendMe(streamSender);
-                ConfigurationMessage conf = ConfigurationMessage.recvMe(streamReceiver);
+                resp.sendMe(clientSocket.GetStream());
+                ConfigurationMessage conf = ConfigurationMessage.recvMe(clientSocket.GetStream());
                 if (!conf.success)
                 {
                     MessageBox.Show("Impossibile connettersi user e/o password errati", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -257,13 +245,18 @@ namespace Client
                 videoSocket.Connect(new IPEndPoint(ipAddr, conf.video_port));
                 clipSocket = new TcpClient();
                 clipSocket.Connect(new IPEndPoint(ipAddr, conf.clip_port));
-                msgToSend = new BlockingCollection<TextMessage>();
                 senderThread = new Thread(deliverMsg);
-                receiverThread = new Thread(receiveMsg);
-                receiverThread.Start();
+                senderThread.IsBackground = true;
                 senderThread.Start();
-                /*clipboardThread = new Thread(listenClipboard);
-                clipboardThread.Start();*/
+                receiverThread = new Thread(receiveMsg);
+                receiverThread.IsBackground = true;
+                receiverThread.Start();
+                deliverClipboardThread = new Thread(_dispatchClipboard);
+                deliverClipboardThread.IsBackground = true;
+                deliverClipboardThread.Start();
+                listenClipboardThread = new Thread(_listenClipboard);
+                listenClipboardThread.IsBackground = true;
+                listenClipboardThread.Start();
                 /*videoThread = new Thread(receiveVideo);
                 videoThread.Start();*/
             }
@@ -298,10 +291,15 @@ namespace Client
                 receiverThread.Abort();
                 receiverThread.Join();
             }
-            if (clipboardThread != null)
+            if (listenClipboardThread != null)
             {
-                clipboardThread.Abort();
-                clipboardThread.Join();
+                listenClipboardThread.Abort();
+                listenClipboardThread.Join();
+            }
+            if (deliverClipboardThread != null)
+            {
+                deliverClipboardThread.Abort();
+                deliverClipboardThread.Join();
             }
             if (videoThread != null)
             {
@@ -317,7 +315,7 @@ namespace Client
                 while (true)
                 {
                     TextMessage msg = msgToSend.Take();
-                    msg.sendMe(streamSender);
+                    msg.sendMe(clientSocket.GetStream());
                     /*thread safe ???*/
                     updateLog(msg);
                 }
@@ -336,7 +334,7 @@ namespace Client
             {
                 while (true)
                 {
-                    TextMessage msg = TextMessage.recvMe(streamReceiver);
+                    TextMessage msg = TextMessage.recvMe(clientSocket.GetStream());
                     /* thread safe ???? */
                     updateLog(msg);
                 }
@@ -347,6 +345,89 @@ namespace Client
             }
             catch(Exception)
             {}
+        }
+
+        private void _dispatchClipboard()
+        {
+            try
+            {
+                while (true)
+                {
+                    ClipboardMessage msg = clipQueue.Take();
+                    msg.sendMe(clipSocket.GetStream());
+                    /*thread safe ???*/
+                    updateLog(new TextMessage(MessageType.ADMIN, "", "Hai condiviso il contenuto della clipboard"));
+                }
+            }
+            catch (ThreadAbortException)
+            {
+                return;
+            }
+            catch (Exception)
+            {}
+        }
+
+        private void _listenClipboard()
+        {
+            try
+            {
+                while (true)
+                {
+                    ClipboardMessage msg = ClipboardMessage.recvMe(clipSocket.GetStream());
+                    receivedClipboard(msg);
+                    if(msg.clipboardType == ClipBoardType.TEXT)
+                        updateLog(new TextMessage(MessageType.ADMIN, msg.username, "ha condiviso la clipboard con del testo"));
+                    else if(msg.clipboardType == ClipBoardType.BITMAP)
+                        updateLog(new TextMessage(MessageType.ADMIN, msg.username, "ha condiviso la clipboard con un'immagine"));
+                    else if(msg.clipboardType == ClipBoardType.FILE)
+                        updateLog(new TextMessage(MessageType.ADMIN, msg.username, "ha condiviso la clipboard con un file che è stato salvato in ./File ricevuti client/"+msg.filename));
+                }
+            }
+            catch
+            {
+                return;
+            }
+        }
+
+        private void receivedClipboard(ClipboardMessage msg)
+        {
+            if (this.InvokeRequired)
+            {
+                this.Invoke(new receivedClipboardDelegate(this.receivedClipboard), new object[] { msg });
+            }
+            else
+            {
+                System.Collections.Specialized.StringCollection paths = new System.Collections.Specialized.StringCollection();
+                switch (msg.clipboardType)
+                {
+                    case ClipBoardType.TEXT:
+                        string s = msg.text;
+                        IDataObject ido = new DataObject();
+                        ido.SetData(s);
+                        Clipboard.SetDataObject(ido, true);
+                        break;
+                    case ClipBoardType.FILE:
+                        BinaryWriter bWrite;
+                        try
+                        {
+                            bWrite = new BinaryWriter(File.Open(Path.GetFullPath(@".\File ricevuti client\") + msg.filename, FileMode.Create));
+                        }
+                        catch(DirectoryNotFoundException)
+                        {
+                            Directory.CreateDirectory(Path.GetFullPath(@".\File ricevuti server\"));
+                            bWrite = new BinaryWriter(File.Open(Path.GetFullPath(@".\File ricevuti client\") + msg.filename, FileMode.Create));
+                        }                        
+                        bWrite.Write(msg.filedata);
+                        bWrite.Close();
+                        paths.Add(Path.GetFullPath(@".\File ricevuti client\") + msg.filename);
+                        Clipboard.SetFileDropList(paths);
+                        break;
+                    case ClipBoardType.BITMAP:
+                        Bitmap bitm = msg.bitmap;
+                        Clipboard.SetImage(bitm);
+                        break;
+                }
+            }
         }
 
         /*private void receiveVideo()
@@ -361,23 +442,6 @@ namespace Client
                         ImageMessage msg = ImageMessage.recvMe(videoStream);
                         updatePictureBox(msg);
                     }
-                }
-            }
-            catch
-            {
-                return;
-            }
-        }*/
-
-        /*private void listenClipboard()
-        {
-            try
-            {
-                NetworkStream stream = clipSocket.GetStream();
-                while (true)
-                {
-                    ClipboardMessage msg = ClipboardMessage.recv(stream);
-                    receivedClipboard(msg);
                 }
             }
             catch
@@ -424,53 +488,6 @@ namespace Client
                 desktopDisplay.Image = bitmap;
                 desktopDisplay.Refresh();
             }
-        }*/
-
-        /*private void receivedClipboard(ClipboardMessage msg)
-        {
-            int i=0;
-            System.Collections.Specialized.StringCollection paths = new System.Collections.Specialized.StringCollection();
-            switch(msg.clipboardType)
-            {
-                case ClipBoardType.TEXT:
-                    this.Invoke(new toolStripMenuDelegate(this.toolStripMenu), new object[] { "false" });
-                    string s = msg.text;
-                    string s1 = TrimFromZero(s);
-                    IDataObject ido = new DataObject();
-                    ido.SetData(s1);
-                    Clipboard.SetDataObject(ido, true);
-                    this.Invoke(new toolStripMenuDelegate(this.toolStripMenu), new object[] { "true" });
-                    break;
-                case ClipBoardType.FILE:
-                    this.Invoke(new toolStripMenuDelegate(this.toolStripMenu), new object[] { "false" });
-                    foreach (string filename in msg.filename)
-                    {
-                        BinaryWriter bWrite = new BinaryWriter(File.Open(Path.GetFullPath(@".\File ricevuti\") + filename, FileMode.Create));
-                        bWrite.Write(msg.filedata[i], 4 + filename.Length, msg.filedata.Length - 4 - filename.Length);
-                        bWrite.Close();
-                        paths.Add(Path.GetFullPath(@".\File ricevuti\") + filename);
-                    }
-                    Clipboard.SetFileDropList(paths);
-                    this.Invoke(new toolStripMenuDelegate(this.toolStripMenu), new object[] { "true" });
-                    break;
-                case ClipBoardType.BITMAP:
-                    this.Invoke(new toolStripMenuDelegate(this.toolStripMenu), new object[] { "false" });
-                    Stream stm = clipSocket.GetStream();
-                    IFormatter formatter = new BinaryFormatter();
-                    Bitmap bitm = (Bitmap)formatter.Deserialize(stm);
-                    Clipboard.SetImage(bitm);
-                    this.Invoke(new toolStripMenuDelegate(this.toolStripMenu), new object[] { "true" });
-                    break;
-            }
-        }*/
-
-        /*private string TrimFromZero(string input)
-        {
-            int index = input.IndexOf('\0');
-            if (index < 0)
-                return input;
-
-            return input.Substring(0, index);
         }*/
 
         public void setFlag()

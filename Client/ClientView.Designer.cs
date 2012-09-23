@@ -138,6 +138,7 @@
             this.shareClipboardToolStripMenuItem.Name = "shareClipboardToolStripMenuItem";
             this.shareClipboardToolStripMenuItem.Size = new System.Drawing.Size(178, 22);
             this.shareClipboardToolStripMenuItem.Text = "Condividi clipboard";
+            this.shareClipboardToolStripMenuItem.Click += new System.EventHandler(this.shareClipboardToolStripMenuItem_Click);
             // 
             // hideChatToolStripMenuItem
             // 

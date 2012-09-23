@@ -186,6 +186,7 @@
             this.bntClipboard.TabIndex = 6;
             this.bntClipboard.Text = "Share Clipboard";
             this.bntClipboard.UseVisualStyleBackColor = true;
+            this.bntClipboard.Click += new System.EventHandler(this.bntClipboard_Click);
             // 
             // label1
             // 

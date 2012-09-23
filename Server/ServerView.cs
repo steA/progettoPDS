@@ -20,9 +20,11 @@ namespace Server
     public partial class ServerView : Form
     {
         private delegate void updateLogDelegate(TextMessage m);
-        private volatile ArrayList clients = ArrayList.Synchronized(
-            new ArrayList());
+        private delegate void receivedClipboardDelegate(ClipboardMessage msg);
+
+        private volatile ArrayList clients = ArrayList.Synchronized(new ArrayList());
         private BlockingCollection<TextMessage> msgQueue = new BlockingCollection<TextMessage>();
+        private BlockingCollection<ClipboardMessage> clipQueue = new BlockingCollection<ClipboardMessage>();
         private int port = 2626;
         private string user = "Server", passw = "password";
         private bool _connect = false, first = true;
@@ -33,8 +35,7 @@ namespace Server
         private Thread _chatDispatcher;
         private Thread _clipboardDispatcher;
         private TcpListener listen;
-        private IOException _disconnectReason;
-        public event pds2.Shared.ConnectionState connectionStateEvent;
+        //public event pds2.Shared.ConnectionState connectionStateEvent;
 
         public ServerView()
         {
@@ -72,6 +73,7 @@ namespace Server
                 _connect = true;
                 txtMessage.Enabled = true;
                 btnSend.Enabled = true;
+                bntClipboard.Enabled = true;
                 connettiToolStripMenuItem.Text = "Disconnetti";
                 label1.Text = "Connesso";
             }
@@ -86,6 +88,7 @@ namespace Server
                 txtMessage.Enabled = false;
                 _connect = false;
                 btnSend.Enabled = false;
+                bntClipboard.Enabled = false;
                 connettiToolStripMenuItem.Text = "Connetti";
                 label1.Text = "Disconnesso";
             }
@@ -141,14 +144,14 @@ namespace Server
                 _chatDispatcher = new Thread(_dispatchChat);
                 _chatDispatcher.IsBackground = true;
                 _chatDispatcher.Start();
-                /*_clipboardDispatcher = new Thread(_dispatchClipboard);
+                _clipboardDispatcher = new Thread(_dispatchClipboard);
                 _clipboardDispatcher.IsBackground = true;
                 _clipboardDispatcher.Start();
-                _videoDispatcher = new Thread(_dispatchVideo);
+                /*_videoDispatcher = new Thread(_dispatchVideo);
                 _videoDispatcher.IsBackground = true;
                 _videoDispatcher.Start();*/
-                if (connectionStateEvent != null)
-                    connectionStateEvent(true);
+                /*if (connectionStateEvent != null)
+                    connectionStateEvent(true);*/
             }
         }
 
@@ -216,6 +219,91 @@ namespace Server
             }
         }
 
+        private void _dispatchClipboard()
+        {
+            while (_connect)
+            {
+                try
+                {
+                    ClipboardMessage msg = clipQueue.Take();
+                    IEnumerator en = clients.GetEnumerator();
+                    try
+                    {
+                        while (en.MoveNext())
+                        {
+                                ((ClientConnection)en.Current).sendClipboard(msg);
+                        }
+                        if (msg.username.Equals(user))
+                            updateLog(new TextMessage(MessageType.ADMIN, "", "Hai condiviso la clipboard"));
+                        else
+                        {
+                            receivedClipboard(msg);
+                            if (msg.clipboardType == ClipBoardType.TEXT)
+                                updateLog(new TextMessage(MessageType.ADMIN, msg.username, "ha condiviso la clipboard con del testo"));
+                            else if (msg.clipboardType == ClipBoardType.BITMAP)
+                                updateLog(new TextMessage(MessageType.ADMIN, msg.username, "ha condiviso la clipboard con un'immagine"));
+                            else if (msg.clipboardType == ClipBoardType.FILE)
+                                updateLog(new TextMessage(MessageType.ADMIN, msg.username, "ha condiviso la clipboard con un file che e' stato salvato in ./File ricevuti server/"+msg.filename));
+                        }
+                    }
+                    catch (ThreadAbortException)
+                    {
+                        while (en.MoveNext())
+                        {
+                                ((ClientConnection)en.Current).sendClipboard(msg);
+                        }
+                        return;
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    return; //the queue has been closed
+                }
+                
+            }
+        }
+
+        private void receivedClipboard(ClipboardMessage msg)
+        {
+            if (this.InvokeRequired)
+            {
+                this.Invoke(new receivedClipboardDelegate(this.receivedClipboard), new object[] { msg });
+            }
+            else
+            {
+                System.Collections.Specialized.StringCollection paths = new System.Collections.Specialized.StringCollection();
+                switch (msg.clipboardType)
+                {
+                    case ClipBoardType.TEXT:
+                        string s = msg.text;
+                        IDataObject ido = new DataObject();
+                        ido.SetData(s);
+                        Clipboard.SetDataObject(ido, true);
+                        break;
+                    case ClipBoardType.FILE:
+                        BinaryWriter bWrite;
+                        try
+                        {
+                            bWrite = new BinaryWriter(File.Open(Path.GetFullPath(@".\File ricevuti server\") + msg.filename, FileMode.Create));
+                        }
+                        catch(DirectoryNotFoundException)
+                        {
+                            Directory.CreateDirectory(Path.GetFullPath(@".\File ricevuti server\"));
+                            bWrite = new BinaryWriter(File.Open(Path.GetFullPath(@".\File ricevuti server\") + msg.filename, FileMode.Create));
+                        }
+                        bWrite.Write(msg.filedata);
+                        bWrite.Close();
+                        paths.Add(Path.GetFullPath(@".\File ricevuti server\") + msg.filename);
+                        Clipboard.SetFileDropList(paths);
+                        break;
+                    case ClipBoardType.BITMAP:
+                        Bitmap bitm = msg.bitmap;
+                        Clipboard.SetImage(bitm);
+                        break;
+                }
+            }
+        }
+
         private void receiveConnection()
         {
             try
@@ -276,14 +364,14 @@ namespace Server
                 throw new ArgumentException("The pool is not connected");
             lock (this)
             {
-                if (connectionStateEvent != null)
-                    connectionStateEvent(false);
+                /*if (connectionStateEvent != null)
+                    connectionStateEvent(false);*/
                 //shutdown all threads
                 _connect = false;
                 if (listen != null)
                     listen.Stop();
                 killThread(_accepterConn);
-                /*killThread(_clipboardDispatcher);*/
+                killThread(_clipboardDispatcher);
                 killThread(_chatDispatcher);
                 /*killThread(_videoDispatcher);*/
                 //reset state
@@ -337,7 +425,7 @@ namespace Server
 
         public void DispatchClipboard(ClipboardMessage msg)
         {
-
+            clipQueue.Add(msg);
         }
 
         public void setFlag()
@@ -392,6 +480,40 @@ namespace Server
                     msgQueue.Add(t);
                 }
                 txtMessage.Clear();
+            }
+        }
+
+        private void bntClipboard_Click(object sender, EventArgs e)
+        {
+            string strclip;
+            IDataObject d = Clipboard.GetDataObject();
+            if (d.GetDataPresent(DataFormats.Text))  //invio testo
+            {
+                strclip = (string)d.GetData(DataFormats.Text);
+                ClipboardMessage cm = new ClipboardMessage(user);
+                cm.text = strclip;
+                cm.clipboardType = ClipBoardType.TEXT;
+                DispatchClipboard(cm);
+            }
+            else if (d.GetDataPresent(DataFormats.FileDrop, true))  //invio file
+            {
+                object fromClipboard = d.GetData(DataFormats.FileDrop);
+                foreach (string sourceFileName in (Array)fromClipboard)
+                {
+                    ClipboardMessage cm = new ClipboardMessage(user);
+                    cm.clipboardType = ClipBoardType.FILE;
+                    cm.filename = Path.GetFileName(sourceFileName);
+                    cm.filedata = File.ReadAllBytes(sourceFileName);
+                    DispatchClipboard(cm);
+                }
+            }
+            else if (Clipboard.ContainsImage()) //invio immagine
+            {
+                Bitmap img = (Bitmap)Clipboard.GetImage();
+                ClipboardMessage cm = new ClipboardMessage(user);
+                cm.bitmap = img;
+                cm.clipboardType = ClipBoardType.BITMAP;
+                DispatchClipboard(cm);
             }
         }
     }
