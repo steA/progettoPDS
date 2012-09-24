@@ -35,11 +35,17 @@ namespace Server
         private Thread _chatDispatcher;
         private Thread _clipboardDispatcher;
         private TcpListener listen;
-        //public event pds2.Shared.ConnectionState connectionStateEvent;
+        private keyboard f;
+        public Keys kstart, kend;
+
+        private KeyMessageFilter m_filter;
 
         public ServerView()
         {
             Application.ApplicationExit += new EventHandler(OnApplicationExit);
+            m_filter = new KeyMessageFilter();
+            m_filter.keyPressed += new KeyPressEventHandler(keyPressedCallback);
+            Application.AddMessageFilter(m_filter);
             InitializeComponent();
         }
 
@@ -123,7 +129,8 @@ namespace Server
 
         private void configurazioneTastiToolStripMenuItem_Click(object sender, EventArgs e)
         {
-
+            f = new keyboard(this);
+            f.ShowDialog();
         }
 
         private void InitializeConnection()
@@ -475,6 +482,10 @@ namespace Server
                 cm.clipboardType = ClipBoardType.BITMAP;
                 DispatchClipboard(cm);
             }
+        }
+
+        public void keyPressedCallback(object sender, EventArgs e)
+        {
         }
     }
 }

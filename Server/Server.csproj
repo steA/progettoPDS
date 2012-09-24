@@ -47,6 +47,13 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ClientConnection.cs" />
+    <Compile Include="keyboard.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="keyboard.Designer.cs">
+      <DependentUpon>keyboard.cs</DependentUpon>
+    </Compile>
+    <Compile Include="KeyMessageFilter.cs" />
     <Compile Include="ServerView.cs">
       <SubType>Form</SubType>
     </Compile>

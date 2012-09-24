@@ -238,8 +238,6 @@
         public System.Windows.Forms.Label label1;
         public System.Windows.Forms.ToolStripMenuItem StartToolStripMenuItem;
         public System.Windows.Forms.ToolStripMenuItem endToolStripMenuItem;
-        //alby --> NON TOGLIERE STATIC
-        //alby end
     }
 }
 
