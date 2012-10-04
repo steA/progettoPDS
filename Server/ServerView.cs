@@ -60,13 +60,6 @@ namespace Server
             Application.AddMessageFilter(m_filter);
             videoManager = new VideoManager(captureStyle,videoQueue);
             InitializeComponent();
-            NetworkChange.NetworkAvailabilityChanged += new NetworkAvailabilityChangedEventHandler(cableError);
-        }
-
-        private void cableError(object sender, NetworkAvailabilityEventArgs e) 
-        {
-            MessageBox.Show("Cavo di rete disconnesso","Errore",MessageBoxButtons.OK,MessageBoxIcon.Error);
-            Disconnect();
         }
         public bool getIsConnected()
         {
@@ -535,14 +528,20 @@ namespace Server
             {
                 try
                 {
-                    object fromClipboard = d.GetData(DataFormats.FileDrop);
-                    foreach (string sourceFileName in (Array)fromClipboard)
+                    string sourceFileName = ((string[])d.GetData(DataFormats.FileDrop))[0];
+                    FileInfo fleMembers = new FileInfo(sourceFileName);
+                    float size = (float)(fleMembers.Length / 1024 / 1024); //MB
+                    if (size > 50)
                     {
-                        ClipboardMessage cm = new ClipboardMessage(user);
-                        cm.clipboardType = ClipBoardType.FILE;
-                        cm.filename = Path.GetFileName(sourceFileName);
-                        cm.filedata = File.ReadAllBytes(sourceFileName);
-                        DispatchClipboard(cm);
+                        MessageBox.Show("Impossibile inviare " + sourceFileName + " perché troppo grande", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                    else
+                    {
+                            ClipboardMessage cm = new ClipboardMessage(user);
+                            cm.clipboardType = ClipBoardType.FILE;
+                            cm.filename = Path.GetFileName(sourceFileName);
+                            cm.filedata = File.ReadAllBytes(sourceFileName);
+                            DispatchClipboard(cm);
                     }
                 }
                 catch (Exception ex)

@@ -137,26 +137,6 @@ namespace Server
             }
 
         }
-        internal void sendAsync(object msg, AsyncCallback callback, Object state)
-        {
-            if (msg is TextMessage)
-            {
-                sendChatAsync((TextMessage)msg, callback, state);
-            }
-            else if (msg is ImageMessage)
-            {
-                sendVideoAsync((ImageMessage)msg, callback, state);
-            }
-            else if (msg is ClipboardMessage)
-            {
-                sendClipboardAsync((ClipboardMessage)msg, callback, state);
-            }
-            else
-            {
-                throw new ArgumentException("Unknown message type");
-            }
-
-        }
         internal void sendChat(TextMessage msg)
         {
                 msg.sendMe(_textTcp.GetStream());
@@ -165,19 +145,6 @@ namespace Server
         {
             if (!(msg.username != null && msg.username.Equals(_username)))
                 msg.sendMe(_clipTcp.GetStream());
-        }
-        internal void sendVideoAsync(ImageMessage msg, AsyncCallback callback, Object state)
-        {
-            msg.sendMeAsync(_videoTcp.GetStream(), callback, state);
-        }
-        internal void sendChatAsync(TextMessage msg, AsyncCallback callback, Object state)
-        {
-            msg.sendMeAsync(_textTcp.GetStream(), callback, state);
-        }
-        internal void sendClipboardAsync(ClipboardMessage msg, AsyncCallback callback, Object state)
-        {
-            if (!(msg.username != null && msg.username.Equals(_username)))
-                msg.sendMeAsync(_clipTcp.GetStream(), callback, state);
         }
 
         private void _receiveText()

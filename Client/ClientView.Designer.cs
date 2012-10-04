@@ -95,7 +95,7 @@
             this.desktopDisplay.Margin = new System.Windows.Forms.Padding(3, 3, 24, 3);
             this.desktopDisplay.Name = "desktopDisplay";
             this.desktopDisplay.Size = new System.Drawing.Size(311, 364);
-            this.desktopDisplay.SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom;
+            this.desktopDisplay.SizeMode = System.Windows.Forms.PictureBoxSizeMode.CenterImage;
             this.desktopDisplay.TabIndex = 4;
             this.desktopDisplay.TabStop = false;
             this.desktopDisplay.Click += new System.EventHandler(this.desktopDisplay_Click);

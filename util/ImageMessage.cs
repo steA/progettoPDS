@@ -10,8 +10,8 @@ namespace pds2.Shared.Messages
     [Serializable]
     public class ImageMessage : SendableObj<ImageMessage>
     {
-        //public Rectangle img_size;
-        //public Rectangle total_img_size;
+        public Size img_size;
+        public int style;
         public byte[] bitmap;
     }
 }

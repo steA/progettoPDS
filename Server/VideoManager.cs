@@ -56,7 +56,7 @@ namespace Server
         {
             MemoryStream ms = new MemoryStream();
             MemoryStream msOld = new MemoryStream();
-            
+            Size sz = new Size(0, 0);
             //compressione dell'immagine
             ImageCodecInfo jgpEncoder = GetEncoder(ImageFormat.Jpeg);
             // Crea un oggetto di tipo Encoder per definire la qualità (e spazio) dell'immagine
@@ -71,13 +71,15 @@ namespace Server
                 
                 p = Cursor.Position;
                 Graphics gfxScreenshot = null;
-                Bitmap bmpScreenshot = new Bitmap(Screen.PrimaryScreen.Bounds.Width,
-                                 Screen.PrimaryScreen.Bounds.Height,
-                                 PixelFormat.Format32bppArgb);
-
+                Bitmap bmpScreenshot=null;
+              
                 //catturo tutto lo schermo
                 if (captureStyle == 2)
                 {
+                    bmpScreenshot = new Bitmap(Screen.PrimaryScreen.Bounds.Width,
+                               Screen.PrimaryScreen.Bounds.Height,
+                               PixelFormat.Format32bppArgb);
+
                     // Create a graphics object from the bitmap. 
                     gfxScreenshot = Graphics.FromImage(bmpScreenshot);
                     // Take the screenshot from the upper left corner to the right bottom corner. 
@@ -101,11 +103,15 @@ namespace Server
                 if (captureStyle == 1)
                 {
                     RECT rct = GetForegroundWindow();
+                 
 
-                    Size sz = new Size(Math.Abs(rct.Left - rct.Right), Math.Abs(rct.Bottom - rct.Top));
-   
-                    if (rct.Bottom > Screen.PrimaryScreen.WorkingArea.Bottom)
+                    sz = new Size(Math.Abs(rct.Left - rct.Right), Math.Abs(rct.Bottom - rct.Top));
+                     if (rct.Bottom > Screen.PrimaryScreen.WorkingArea.Bottom)
                         sz.Height = Math.Abs(Screen.PrimaryScreen.WorkingArea.Bottom - rct.Top);
+                    bmpScreenshot = new Bitmap(sz.Width,
+                          sz.Height,
+                          PixelFormat.Format32bppArgb);
+                    
 
                     // Create a graphics object from the bitmap. 
                     gfxScreenshot = Graphics.FromImage(bmpScreenshot);
@@ -121,11 +127,14 @@ namespace Server
                     if (SetCursor(ref p, rct.Left, rct.Top, sz.Width, sz.Height))
                         creaBitmapCursore(ref gfxScreenshot, p.X, p.Y);
                 }
-
                 //catturo una porzione dello schermo
                 if (captureStyle == 3)
                 { 
-                    Size sz = new Size(width_s, height_s);
+                    sz = new Size(width_s, height_s);
+                    bmpScreenshot = new Bitmap(sz.Width,
+                         sz.Height,
+                         PixelFormat.Format32bppArgb);
+                    
                     // Create a graphics object from the bitmap. 
                     gfxScreenshot = Graphics.FromImage(bmpScreenshot);
                     // Take the screenshot from the upper left corner to the right bottom corner. 
@@ -158,7 +167,11 @@ namespace Server
                     videoQueue.Add(msg);
                     ms.Position = msOld.Position = 0;
                     ms.CopyTo(msOld);
-                    
+                    if (captureStyle == 3)
+                    {
+                        msg.img_size = sz;
+                        msg.style = 3;
+                    }
                 }
                 }
                 finally 

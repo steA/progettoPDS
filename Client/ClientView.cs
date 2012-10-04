@@ -422,24 +422,81 @@ namespace Client
 
         private void updatePictureBox(ImageMessage m) 
         {
+
             MemoryStream ms = new MemoryStream(m.bitmap);
-            desktopDisplay.Image = byteToImage(ms);
+            desktopDisplay.Image = byteToImage(ms, m);
         
         }
 
-        public Image byteToImage(MemoryStream ms)
+        public Image byteToImage(MemoryStream ms, ImageMessage m)
         {
             //MemoryStream ms = new MemoryStream(byteArrayIn);
             Image returnImage = null;
+            Bitmap b = null;
             try
             {
-                returnImage = Image.FromStream(ms);
+                returnImage = Bitmap.FromStream(ms);
+                //Graphics gr = Graphics.FromImage(returnImage);
+                if (m.style == 3)
+                {
+                    Size s = GenerateImageDimensions(m.img_size.Width, m.img_size.Height, desktopDisplay.Width, desktopDisplay.Height);
+                    b = new Bitmap(returnImage, s.Width, s.Height);
+                }
+                else
+                    b = (Bitmap)returnImage;
+                //center the new image
+                desktopDisplay.SizeMode = PictureBoxSizeMode.CenterImage;
             }
             catch (System.Exception ec)
             {
                 MessageBox.Show(ec.ToString());
             }
-            return returnImage;
+            return (Image)b;
+        }
+
+        //Generate new image dimensions
+        public Size GenerateImageDimensions(int currW, int currH, int destW, int destH)
+        {
+            //double to hold the final multiplier to use when scaling the image
+            double multiplier = 0;
+
+            //string for holding layout
+            string layout;
+
+            //determine if it's Portrait or Landscape
+            if (currH > currW) layout = "portrait";
+            else layout = "landscape";
+
+            switch (layout.ToLower())
+            {
+                case "portrait":
+                    //calculate multiplier on heights
+                    if (destH > destW)
+                    {
+                        multiplier = (double)destW / (double)currW;
+                    }
+
+                    else
+                    {
+                        multiplier = (double)destH / (double)currH;
+                    }
+                    break;
+                case "landscape":
+                    //calculate multiplier on widths
+                    if (destH > destW)
+                    {
+                        multiplier = (double)destW / (double)currW;
+                    }
+
+                    else
+                    {
+                        multiplier = (double)destH / (double)currH;
+                    }
+                    break;
+            }
+
+            //return the new image dimensions
+            return new Size((int)(currW * multiplier), (int)(currH * multiplier));
         }
 
         private ImageCodecInfo GetEncoder(ImageFormat format)
@@ -618,17 +675,29 @@ namespace Client
                 cm.clipboardType = ClipBoardType.BITMAP;
                 DispatchClipboard(cm);
             }
-
             else if (d.GetDataPresent(DataFormats.FileDrop, true))  //invio file
             {
-                object fromClipboard = d.GetData(DataFormats.FileDrop);
-                foreach (string sourceFileName in (Array)fromClipboard)
+                try
                 {
-                    ClipboardMessage cm = new ClipboardMessage(user);
-                    cm.clipboardType = ClipBoardType.FILE;
-                    cm.filename = Path.GetFileName(sourceFileName);
-                    cm.filedata = File.ReadAllBytes(sourceFileName);
-                    DispatchClipboard(cm);
+                    string sourceFileName = ((string[])d.GetData(DataFormats.FileDrop))[0];
+                    FileInfo fleMembers = new FileInfo(sourceFileName);
+                    float size = (float)(fleMembers.Length / 1024 / 1024); //MB
+                    if (size > 50)
+                    {
+                        MessageBox.Show("Impossibile inviare " + sourceFileName + " perché troppo grande", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                    else
+                    {
+                        ClipboardMessage cm = new ClipboardMessage(user);
+                        cm.clipboardType = ClipBoardType.FILE;
+                        cm.filename = Path.GetFileName(sourceFileName);
+                        cm.filedata = File.ReadAllBytes(sourceFileName);
+                        DispatchClipboard(cm);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
         }
